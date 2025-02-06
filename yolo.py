@@ -26,7 +26,7 @@ class YOLO(object):
         #   验证集损失较低不代表mAP较高，仅代表该权值在验证集上泛化性能较好。
         #   如果出现shape不匹配，同时要注意训练时的model_path和classes_path参数的修改
         #--------------------------------------------------------------------------#
-        "model_path"        : '/home/zhangting/yolov5-pytorch/best_epoch_weights.pth',
+        "model_path"        : '/home/zhangting/idcard_detect/best_epoch_weights.pth',
         "classes_path"      : 'model_data/class.txt',
         #---------------------------------------------------------------------#
         #   anchors_path代表先验框对应的txt文件，一般不修改。
@@ -62,7 +62,7 @@ class YOLO(object):
         #   该变量用于控制是否使用letterbox_image对输入图像进行不失真的resize，
         #   在多次测试后，发现关闭letterbox_image直接resize的效果更好
         #---------------------------------------------------------------------#
-        "letterbox_image"   : True,
+        "letterbox_image"   : False,
         #-------------------------------#
         #   是否使用Cuda
         #   没有GPU可以设置成False
@@ -120,13 +120,14 @@ class YOLO(object):
                 self.net = nn.DataParallel(self.net)
                 self.net = self.net.cuda()
 
-    # #---------------------------------------------------#
-    # #   检测图片flask接口函数，返回true或false
-    # #---------------------------------------------------#
+    #---------------------------------------------------#
+    #   检测图片flask接口函数，返回true或false
+    #---------------------------------------------------#
     def detect_image_flask(self, image, crop = False, count = False):
         #---------------------------------------------------#
         #   计算输入图片的高和宽
         #---------------------------------------------------#
+        # from IPython import embed;embed()
         image_shape = np.array(np.shape(image)[0:2])
         #---------------------------------------------------------#
         #   在这里将图像转换成RGB图像，防止灰度图在预测时报错。
@@ -157,18 +158,77 @@ class YOLO(object):
             #---------------------------------------------------------#
             results = self.bbox_util.non_max_suppression(torch.cat(outputs, 1), self.num_classes, self.input_shape, 
                         image_shape, self.letterbox_image, conf_thres = self.confidence, nms_thres = self.nms_iou)
-                                                    
+            print("results:", results)                                 
             if results[0] is None: 
-                return False
+                return False,None,None
 
             top_label = np.array(results[0][:, 6], dtype='int32')
+            top_boxes = results[0][:, :4]
+            top_conf    = results[0][:, 4] * results[0][:, 5]
+            box = top_boxes[0]
+            top, left, bottom, right = box
+            score = top_conf[0]
+
+            top     = max(0, np.floor(top).astype('int32'))
+            left    = max(0, np.floor(left).astype('int32'))
+            bottom  = min(image.size[1], np.floor(bottom).astype('int32'))
+            right   = min(image.size[0], np.floor(right).astype('int32'))
             for c in top_label:
                 predicted_class = self.class_names[int(c)]
-                if predicted_class == 'hat':  # 如果检测到帽子，则返回 true
-                    return True
+                if predicted_class == 'id_card':  # 如果检测到身份证，则返回 true
+                    return True, score, (top, bottom, left, right)
 
-        return False  # 没有检测到帽子
-    
+        return False,None,None  # 没有检测到身份证
+    # def detect_image_flask(self, image, crop=False, count=False):
+    #     image_shape = np.array(np.shape(image)[0:2])
+    #     image = cvtColor(image)
+    #     image_data = resize_image(image, (self.input_shape[1], self.input_shape[0]), self.letterbox_image)
+    #     image_data = np.expand_dims(np.transpose(preprocess_input(np.array(image_data, dtype='float32')), (2, 0, 1)), 0)
+
+    #     with torch.no_grad():
+    #         images = torch.from_numpy(image_data)
+    #         if self.cuda:
+    #             images = images.cuda()
+    #         outputs = self.net(images)
+    #         outputs = self.bbox_util.decode_box(outputs)
+    #         results = self.bbox_util.non_max_suppression(
+    #             torch.cat(outputs, 1), self.num_classes, self.input_shape,
+    #             image_shape, self.letterbox_image, conf_thres=self.confidence, nms_thres=self.nms_iou
+    #         )
+
+    #         if results[0] is None:
+    #             return False, None, None
+
+    #         max_area = 0
+    #         best_box = None
+    #         best_score = None
+
+    #         for i, box in enumerate(results[0]):
+    #             top, left, bottom, right = box[:4]
+    #             score = box[4] * box[5]
+    #             label = int(box[6])
+    #             predicted_class = self.class_names[label]
+
+    #             if predicted_class == 'id_card':
+    #                 # 计算检测框的面积
+    #                 area = (bottom - top) * (right - left)
+                    
+    #                 # 更新面积最大的框
+    #                 if area > max_area:
+    #                     max_area = area
+    #                     best_box = (top, bottom, left, right)
+    #                     best_score = score
+
+    #         if best_box:
+    #             top, bottom, left, right = best_box
+    #             top = max(0, np.floor(top).astype('int32'))
+    #             left = max(0, np.floor(left).astype('int32'))
+    #             bottom = min(image.size[1], np.floor(bottom).astype('int32'))
+    #             right = min(image.size[0], np.floor(right).astype('int32'))
+    #             return True, best_score, (top, bottom, left, right)
+
+    #     return False, None, None
+
     def detect_image(self, image, crop = False, count = False):
         #---------------------------------------------------#
         #   计算输入图片的高和宽
@@ -203,7 +263,7 @@ class YOLO(object):
             #---------------------------------------------------------#
             results = self.bbox_util.non_max_suppression(torch.cat(outputs, 1), self.num_classes, self.input_shape, 
                         image_shape, self.letterbox_image, conf_thres = self.confidence, nms_thres = self.nms_iou)
-                                                    
+            # from IPython import embed;embed()                                 
             if results[0] is None: 
                 return image
 
